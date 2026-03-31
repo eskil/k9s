@@ -47,6 +47,9 @@ func NewApp(cfg *config.Config, _ string) *App {
 		"prompt": NewPrompt(&a, a.Config.K9s.UI.NoIcons, a.Styles),
 		"crumbs": NewCrumbs(a.Styles),
 	}
+	if len(cfg.K9s.UI.Clocks) > 0 {
+		a.views["clocks"] = NewClocks(a.Application, cfg.K9s.UI.Clocks, a.Styles)
+	}
 
 	return &a
 }
@@ -263,6 +266,14 @@ func (a *App) Crumbs() *Crumbs {
 // Logo return the app logo.
 func (a *App) Logo() *Logo {
 	return a.views["logo"].(*Logo)
+}
+
+// Clocks returns the app clocks widget, or nil if not configured.
+func (a *App) Clocks() *Clocks {
+	if v, ok := a.views["clocks"]; ok {
+		return v.(*Clocks)
+	}
+	return nil
 }
 
 // Prompt returns command prompt.

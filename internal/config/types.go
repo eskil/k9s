@@ -14,6 +14,15 @@ const (
 	MEM = "memory"
 )
 
+// ClockConfig represents a single timezone clock shown in the header.
+type ClockConfig struct {
+	// Timezone is an IANA timezone name, e.g. "America/New_York".
+	Timezone string `json:"timezone" yaml:"timezone"`
+
+	// Label is an optional short display label. Defaults to the timezone name.
+	Label string `json:"label" yaml:"label,omitempty"`
+}
+
 // UI tracks ui specific configs.
 type UI struct {
 	// EnableMouse toggles mouse support.
@@ -43,6 +52,9 @@ type UI struct {
 	// Skin reference the general k9s skin name.
 	// Can be overridden per context.
 	Skin string `json:"skin" yaml:"skin,omitempty"`
+
+	// Clocks defines optional timezone clocks shown in the header when logoless is true.
+	Clocks []ClockConfig `json:"clocks" yaml:"clocks,omitempty"`
 
 	// DefaultsToFullScreen toggles fullscreen on views like logs, yaml, details.
 	DefaultsToFullScreen bool `json:"defaultsToFullScreen" yaml:"defaultsToFullScreen"`

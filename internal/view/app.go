@@ -325,6 +325,8 @@ func (a *App) buildHeader() tview.Primitive {
 
 	if a.showLogo {
 		header.AddItem(a.Logo(), 26, 1, false)
+	} else if clocks := a.App.Clocks(); clocks != nil {
+		header.AddItem(clocks, clocks.Width(), 1, false)
 	}
 
 	return header
@@ -342,6 +344,10 @@ func (a *App) Halt() {
 func (a *App) Resume() {
 	var ctx context.Context
 	ctx, a.cancelFn = context.WithCancel(context.Background())
+
+	if clocks := a.App.Clocks(); clocks != nil {
+		clocks.Watch(ctx)
+	}
 
 	go a.clusterUpdater(ctx)
 
