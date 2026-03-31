@@ -44,8 +44,8 @@ func (c *Clocks) Width() int {
 		if label == "" {
 			label = cfg.Timezone
 		}
-		// "LABEL HH:MM:SS"
-		if w := len(label) + 1 + 8; w > max {
+		// "LABEL HH:MM:SS+" (extra char for day indicator)
+		if w := len(label) + 1 + 8 + 1; w > max {
 			max = w
 		}
 	}
@@ -76,6 +76,7 @@ func (c *Clocks) Watch(ctx context.Context) {
 func (c *Clocks) refresh() {
 	c.Clear()
 	now := time.Now()
+	localYear, localMonth, localDay := now.Date()
 	for i, cfg := range c.configs {
 		if i > 0 {
 			fmt.Fprint(c, "\n")
@@ -89,6 +90,16 @@ func (c *Clocks) refresh() {
 		if label == "" {
 			label = cfg.Timezone
 		}
-		fmt.Fprintf(c, "[::b]%s[::-] %s", label, t.Format("15:04:05"))
+		clockYear, clockMonth, clockDay := t.Date()
+		localDate := time.Date(localYear, localMonth, localDay, 0, 0, 0, 0, time.Local)
+		clockDate := time.Date(clockYear, clockMonth, clockDay, 0, 0, 0, 0, time.Local)
+		dayIndicator := " "
+		switch {
+		case clockDate.After(localDate):
+			dayIndicator = "+"
+		case clockDate.Before(localDate):
+			dayIndicator = "-"
+		}
+		fmt.Fprintf(c, "[::b]%s[::-] %s%s", label, t.Format("15:04:05"), dayIndicator)
 	}
 }
