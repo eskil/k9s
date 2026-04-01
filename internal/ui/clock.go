@@ -100,6 +100,11 @@ func (c *Clocks) refresh() {
 		case clockDate.Before(localDate):
 			dayIndicator = "-"
 		}
-		fmt.Fprintf(c, "[::b]%s[::-] %s%s", label, t.Format("15:04:05"), dayIndicator)
+		sep := ":"
+		if t.Second()%2 == 0 {
+			sep = "[::d]:[::-]"
+		}
+		timeStr := fmt.Sprintf("%02d%s%02d%s%02d", t.Hour(), sep, t.Minute(), sep, t.Second())
+		fmt.Fprintf(c, "[::b]%s[::-] %s%s", label, timeStr, dayIndicator)
 	}
 }
