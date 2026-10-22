@@ -53,6 +53,10 @@ type UI struct {
 	// Can be overridden per context.
 	Skin string `json:"skin" yaml:"skin,omitempty"`
 
+	// Logo represents custom header ascii art.
+	// Can be overridden per context.
+	Logo string `json:"logo" yaml:"logo,omitempty"`
+
 	// Clocks defines optional timezone clocks shown in the header when logoless is true.
 	Clocks []ClockConfig `json:"clocks" yaml:"clocks,omitempty"`
 

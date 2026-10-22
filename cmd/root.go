@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,9 +35,9 @@ const (
 var _ data.KubeSettings = (*client.Config)(nil)
 
 var (
-	version, commit, date = "dev", "dev", client.NA
-	k9sFlags              *config.Flags
-	k8sFlags              *genericclioptions.ConfigFlags
+	version, commit, date, skipLatestRevCheck = "dev", "dev", client.NA, ""
+	k9sFlags                                  *config.Flags
+	k8sFlags                                  *genericclioptions.ConfigFlags
 
 	rootCmd = &cobra.Command{
 		Use:   appName,
@@ -100,14 +101,17 @@ func run(*cobra.Command, []string) error {
 		}
 	}()
 
-	slog.SetDefault(slog.New(tint.NewHandler(logFile, &tint.Options{
+	slog.SetDefault(slog.New(tint.NewTextHandler(logFile, &tint.Options{
 		Level:      parseLevel(*k9sFlags.LogLevel),
 		TimeFormat: time.RFC3339,
 	})))
 
 	cfg, err := loadConfiguration()
 	if err != nil {
-		slog.Warn("Fail to load global/context configuration", slogs.Error, err)
+		// Only warn if there's an actual context configured
+		if cfg != nil && cfg.K9s.ActiveContextName() != "" {
+			slog.Warn("Fail to load global/context configuration", slogs.Error, err)
+		}
 	}
 	app := view.NewApp(cfg)
 	if app.Config.K9s.DefaultView != "" {
@@ -148,16 +152,27 @@ func loadConfiguration() (*config.Config, error) {
 		slog.Error("Fail to refine k9s config", slogs.Error, err)
 		errs = errors.Join(errs, err)
 	}
+	if skipLatestRevCheck != "" {
+		if b, err := strconv.ParseBool(skipLatestRevCheck); err == nil {
+			k9sCfg.K9s.SkipLatestRevCheck = b
+		}
+	}
 
 	// Try to access server version if that fail. Connectivity issue?
-	if !conn.CheckConnectivity() {
-		errs = errors.Join(errs, fmt.Errorf("cannot connect to context: %s", k9sCfg.K9s.ActiveContextName()))
-	}
-	if !conn.ConnectionOK() {
-		slog.Warn("💣 Kubernetes connectivity toast!")
-		errs = errors.Join(errs, fmt.Errorf("k8s connection failed for context: %s", k9sCfg.K9s.ActiveContextName()))
+	// Skip connectivity checks if no context is configured
+	if k9sCfg.K9s.ActiveContextName() != "" {
+		if !conn.CheckConnectivity() {
+			ctx := k9sCfg.K9s.ActiveContextName()
+			errs = errors.Join(errs, fmt.Errorf("cannot connect to context: %s", ctx))
+		}
+		if !conn.ConnectionOK() {
+			slog.Warn("💣 Kubernetes connectivity toast!")
+			errs = errors.Join(errs, fmt.Errorf("k8s connection failed for context: %s", k9sCfg.K9s.ActiveContextName()))
+		} else {
+			slog.Info("✅ Kubernetes connectivity OK")
+		}
 	} else {
-		slog.Info("✅ Kubernetes connectivity OK")
+		slog.Info("No context configured")
 	}
 
 	if err := k9sCfg.Save(false); err != nil {

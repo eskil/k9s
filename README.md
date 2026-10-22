@@ -237,6 +237,26 @@ Binaries for Linux, Windows and Mac are available as tarballs in the [release pa
   docker run --rm -it -v ~/.kube/config:/root/.kube/config k9s-docker:0.1
   ```
 
+#### Building a multi-platform image
+
+  The `make imgx` target builds for `linux/amd64` and `linux/arm64` via Docker
+  buildx:
+
+  ```shell
+  make imgx
+  ```
+
+  Cross-architecture builds rely on QEMU emulation. Docker Desktop includes
+  this out of the box. On a plain Docker Engine install, see the
+  [buildx multi-platform docs](https://docs.docker.com/build/building/multi-platform/)
+  for enabling emulation.
+
+  Override the defaults with `BUILD_PLATFORMS`, `IMG_NAME` and `VERSION`:
+
+  ```shell
+  make imgx BUILD_PLATFORMS=linux/amd64,linux/arm64 IMG_NAME=your-org/k9s VERSION=v0.0.1
+  ```
+
 ---
 
 ## PreFlight Checks
@@ -441,6 +461,15 @@ K9s uses aliases to navigate most K8s resources.
 
 You can now override the context portForward default address configuration by setting an env variable that can override all clusters portForward local address using `K9S_DEFAULT_PF_ADDRESS=a.b.c.d`
 
+
+Clipboard behavior can also be controlled via environment variables:
+
+- `K9S_CLIPBOARD=auto|native|osc52` (default `auto`)
+  - `auto`: try native clipboard utilities first, then fall back to OSC52 when available.
+  - `native`: only use native clipboard utilities (xclip/xsel/wl-clipboard/etc).
+  - `osc52`: force OSC52 clipboard writes.
+- `K9S_OSC52_MAX=<encoded-bytes>` sets the maximum allowed OSC52 payload size before k9s rejects the copy operation. Default is `74994`.
+
   ```yaml
   # $XDG_CONFIG_HOME/k9s/config.yaml
   k9s:
@@ -486,7 +515,11 @@ You can now override the context portForward default address configuration by se
       # Toggles reactive UI. This option provide for watching on disk artifacts changes and update the UI live Defaults to false.
       reactive: false
       # By default all contexts will use the dracula skin unless explicitly overridden in the context config file.
-      skin: dracula # => assumes the file skins/dracula.yaml is present in the  $XDG_DATA_HOME/k9s/skins directory. Can be overriden with K9S_SKIN.
+      skin: dracula # => assumes the file skins/dracula.yaml is present in the  $XDG_DATA_HOME/k9s/skins directory. Can be overridden with K9S_SKIN.
+      # Replaces the K9s header logo with custom ascii art. Can be overridden per context.
+      logo: |
+        MY
+        K9S
       # Convert dark skins to light, or vice versa, preserving hue. Default: false
       invert: false
       # Allows to set certain views default fullscreen mode. (yaml, helm history, describe, value_extender, details, logs) Default false
@@ -497,8 +530,6 @@ You can now override the context portForward default address configuration by se
     noIcons: false
     # Toggles whether k9s should check for the latest revision from the GitHub repository releases. Default is false.
     skipLatestRevCheck: false
-    # When altering kubeconfig or using multiple kube configs, k9s will clean up clusters configurations that are no longer in use. Setting this flag to true will keep k9s from cleaning up inactive cluster configs. Defaults to false.
-    keepMissingClusters: false
     # Logs configuration
     logger:
       # Defines the number of lines to return. Default 100
@@ -515,6 +546,8 @@ You can now override the context portForward default address configuration by se
       columnLock: false
       # Toggles log line timestamp info. Default false
       showTime: false
+      # Sets the internal log channel buffer size. Increase when log lines are dropped under high throughput. Default 50
+      logBufferSize: 100
     # Provide shell pod customization when nodeShell feature gate is enabled!
     shellPod:
       # The shell pod image to use.
@@ -579,7 +612,6 @@ k9s:
     active: po
   featureGates:
     nodeShell: true # => Enable this feature gate to make nodeShell available on this cluster
-  portForwardAddress: localhost
 ```
 
 ### Customizing the Shell Pod
@@ -731,6 +763,11 @@ The annotation value must specify a container to forward to as well as a local p
 
 You can change which columns shows up for a given resource via custom views. To surface this feature, you will need to create a new configuration file, namely `$XDG_CONFIG_HOME/k9s/views.yaml`. This file leverages GVR (Group/Version/Resource) to configure the associated table view columns. If no GVR is found for a view the default rendering will take over (ie what we have now). Going wide will add all the remaining columns that are available on the given resource after your custom columns. To boot, you can edit your views config file and tune your resources views live!
 
+Use `version/resource` for resources in the core API group and
+`group/version/resource` for resources in a named API group. For example,
+pods use `v1/pods`, while mutating webhook configurations use
+`admissionregistration.k8s.io/v1/mutatingwebhookconfigurations`.
+
 📢 🎉 As of `release v0.40.0` you can specify json parse expressions to further customize your resources rendering.
 
 The new column syntax is as follows:
@@ -799,9 +836,103 @@ views:
       - NAME
       - TYPE
       - CLUSTER-IP
+
+  admissionregistration.k8s.io/v1/mutatingwebhookconfigurations:
+    columns:
+      - NAME
+      - WEBHOOKS|N
+      - AGE
+      - POLICY:.webhooks[*].failurePolicy
+      - TIMEOUT:.webhooks[*].timeoutSeconds|N
 ```
 
 > 🩻 NOTE: This is experimental and will most likely change as we iron this out!
+
+---
+
+## Resource Jumps
+
+K9s allows you to define custom jump shortcuts between Custom Resource Definitions (CRDs) and their related resources. This feature enables you to quickly jump from one CRD to its dependent or associated resources, similar to the built-in "jump to owner" behavior.
+
+By default, K9s provides built-in jumps for standard Kubernetes resources (e.g., Deployment → Pods, Node → Pods). With custom jumps, you can extend this behavior to your own CRDs without modifying k9s source code.
+
+To use this feature, create a configuration file at `$XDG_CONFIG_HOME/k9s/jumps.yaml`.
+
+### Configuration Format
+
+```yaml
+# $XDG_CONFIG_HOME/k9s/jumps.yaml
+jumps:
+  # Define jump from source GVR to target GVR
+  "myoperator.io/v1/patchplans":
+    targetGVR: "myoperator.io/v1/patchjobs"
+    fieldSelector: "spec.patchPlanRef={{.metadata.name}}"
+```
+
+### Configuration Fields
+
+* **Source GVR** (map key): The Group/Version/Resource of the source CRD in format `group/version/resource` or `version/resource` for core resources
+* **targetGVR**: The target resource to jump to
+* **labelSelector** (optional): Kubernetes label selector to filter target resources. Supports Go template syntax
+* **fieldSelector** (optional): Kubernetes field selector to filter target resources. Supports Go template syntax
+* **targetNamespace** (optional): Controls namespace behavior:
+  * Empty (default): Use the source resource's namespace (or cluster-scoped if source is cluster-scoped)
+  * `all`: View resources across all namespaces
+  * `<namespace-name>`: Jump to a specific namespace
+  * `{{.spec.field}}`: Use template expression to extract namespace from source resource
+
+### Template Syntax
+
+Both `labelSelector` and `fieldSelector` support Go template syntax to dynamically reference fields from the selected (source) resource. Any field of the source object can be used on the **value** side of a selector:
+
+* `{{.metadata.name}}` - The resource name
+* `{{.metadata.namespace}}` - The resource namespace
+* `{{.metadata.labels.key}}` - A specific label value
+* `{{.spec.fieldName}}` - Any field from the source resource spec
+* `{{.status.field}}` - Any field from the source resource status
+
+> **Note:** The template above only controls the selector *value* (the right-hand side, computed from the source resource). For label selectors, the *key* can be any label and is matched server side. For **field selectors**, k9s applies the selector as a **local (client-side) filter** on the target resources, so the key may be any field path present in the target object (e.g. `metadata.name`, `spec.volumeName`), not just the API-selectable fields. This means field-selector jumps work even for resources whose fields are not server-side selectable. Field values are compared as strings, and the path is matched against the target object's manifest. For background on which fields the API server itself treats as selectable, see the Kubernetes docs on [CRD selectable fields](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#crd-selectable-fields).
+
+### Examples
+
+#### Jump between custom operator resources
+
+```yaml
+jumps:
+  "myoperator.io/v1/patchplans":
+    targetGVR: "myoperator.io/v1/patchjobs"
+    fieldSelector: "spec.patchPlanRef={{.metadata.name}}"
+```
+
+#### Jump from ArgoCD Application to Deployments
+
+```yaml
+jumps:
+  "argoproj.io/v1alpha1/applications":
+    targetGVR: "apps/v1/deployments"
+    labelSelector: "app.kubernetes.io/instance={{.metadata.name}}"
+```
+
+#### Jump from Karpenter NodePool to Nodes
+
+```yaml
+jumps:
+  "karpenter.sh/v1/nodepools":
+    targetGVR: "v1/nodes"
+    labelSelector: "karpenter.sh/nodepool={{.metadata.name}}"
+    targetNamespace: "all"  # Nodes are cluster-scoped
+```
+
+### How It Works
+
+1. When viewing a resource that has a custom jump rule defined
+2. Pressing `Enter` on a selected item will:
+   - Apply the template expressions using the selected resource's data
+   - Jump to the target resource view with filters applied
+   - Automatically apply the label/field selectors to show only related resources
+   - Adjust the namespace context as configured
+
+3. If no custom jump is defined, the default behavior applies (describe view or built-in jump)
 
 ---
 
@@ -1182,6 +1313,14 @@ Colors can be defined by name or using a hex representation. Of recent, we've ad
 > NOTE: This is very much an experimental feature at this time, more will be added/modified if this feature has legs so thread accordingly!
 > NOTE: Please see [K9s Skins](https://k9scli.io/topics/skins/) for a list of available colors.
 
+Custom header logos use a fixed area of 26 terminal columns and six art rows, with a
+status row underneath. Extra columns and lines are clipped from the right and
+bottom; tabs expand to four spaces and bracketed text is displayed literally.
+Context logos override `k9s.ui.logo`; an empty or whitespace-only context logo
+falls back to the global logo, and an empty global logo uses the stock K9s art.
+Stock and custom logos use the same layout; logo configuration does not resize
+the resource view, prompt, or footer.
+
 To skin a specific context and provided the file `in-the-navy.yaml` is present in your skins directory.
 
 ```yaml
@@ -1189,6 +1328,9 @@ To skin a specific context and provided the file `in-the-navy.yaml` is present i
 k9s:
   cluster: clusterX
   skin: in-the-navy
+  logo: |
+    PROD
+    CLUSTER
   readOnly: false
   namespace:
     active: default
@@ -1200,7 +1342,6 @@ k9s:
     active: po
   featureGates:
     nodeShell: false
-  portForwardAddress: localhost
 ```
 
 You can also specify a default skin for all contexts in the root k9s config file as so:
@@ -1226,6 +1367,10 @@ k9s:
     reactive: false
     # By default all contexts will use the dracula skin unless explicitly overridden in the context config file.
     skin: dracula # => assumes the file skins/dracula.yaml is present in the  $XDG_DATA_HOME/k9s/skins directory
+    # Replaces the K9s header logo with custom ascii art. Can be overridden per context.
+    logo: |
+      MY
+      K9S
     defaultsToFullScreen: false
   skipLatestRevCheck: false
   disablePodCounting: false
@@ -1248,6 +1393,7 @@ k9s:
     disableAutoscroll: false
     columnLock: false
     showTime: false
+    logBufferSize: 50
   thresholds:
     cpu:
       critical: 90

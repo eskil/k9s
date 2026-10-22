@@ -279,7 +279,7 @@ func (a *App) toggleHeader(header, logo bool) {
 	}
 	if a.showHeader {
 		flex.RemoveItemAtIndex(0)
-		flex.AddItemAtIndex(0, a.buildHeader(), 7, 1, false)
+		flex.AddItemAtIndex(0, a.buildHeader(), ui.LogoArtHeight+1, 1, false)
 	} else {
 		flex.RemoveItemAtIndex(0)
 		flex.AddItemAtIndex(0, a.statusIndicator(), 1, 1, false)
@@ -322,13 +322,11 @@ func (a *App) buildHeader() tview.Primitive {
 	}
 	header.AddItem(a.clusterInfo(), clWidth, 1, false)
 	header.AddItem(a.Menu(), 0, 1, false)
-
 	if a.showLogo {
-		header.AddItem(a.Logo(), 26, 1, false)
+		header.AddItem(a.Logo(), ui.LogoWidth, 0, false)
 	} else if clocks := a.App.Clocks(); clocks != nil {
 		header.AddItem(clocks, clocks.Width(), 1, false)
 	}
-
 	return header
 }
 
@@ -360,6 +358,9 @@ func (a *App) Resume() {
 		}
 		if err := a.CustomViewsWatcher(ctx, a); err != nil {
 			slog.Warn("CustomView watcher failed", slogs.Error, err)
+		}
+		if err := a.CustomJumpsWatcher(ctx, a); err != nil {
+			slog.Warn("CustomJumps watcher failed", slogs.Error, err)
 		}
 	}
 }
@@ -484,7 +485,8 @@ func (a *App) switchContext(ci *cmd.Interpreter, force bool) error {
 			a.Config.SetActiveView(client.PodGVR.String())
 		}
 		ns := a.Config.ActiveNamespace()
-		if !a.Conn().IsValidNamespace(ns) {
+		_, nsExplicit := ci.NSArg()
+		if !nsExplicit && !a.Conn().IsValidNamespace(ns) {
 			slog.Warn("Unable to validate namespace", slogs.Namespace, ns)
 			if err := a.Config.SetActiveNamespace(ns); err != nil {
 				return err

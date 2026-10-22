@@ -12,6 +12,12 @@ k9s:
     crumbsless: false
     splashless: false
     noIcons: false
+    logo: |
+      COOL
+      K9S
+    clocks:
+      - timezone: America/New_York
+        label: NYC
   skipLatestRevCheck: false
   disablePodCounting: false
   shellPod:

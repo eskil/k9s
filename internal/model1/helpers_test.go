@@ -4,10 +4,12 @@
 package model1
 
 import (
+	"fmt"
 	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSortLabels(t *testing.T) {
@@ -114,7 +116,11 @@ func TestDurationToSecond(t *testing.T) {
 		"day_hour_minute_seconds": {s: "2d22h3m50s", e: 252230},
 		"year":                    {s: "3y", e: 94608000},
 		"year_day":                {s: "1y2d", e: 31708800},
-		"n/a":                     {s: NAValue, e: math.MaxInt64},
+		"na":                      {s: NAValue, e: math.MaxInt64},
+		"n/a":                     {s: "n/a", e: math.MaxInt64},
+		"unknown":                 {s: "<unknown>", e: math.MaxInt64},
+		"none":                    {s: "<none>", e: math.MaxInt64},
+		"invalid":                 {s: "<invalid>", e: math.MaxInt64},
 	}
 
 	for k := range uu {
@@ -134,11 +140,65 @@ func TestCapacityToNumber(t *testing.T) {
 		"blank": {s: "  ", e: 0},
 		"1Gi":   {s: "1Gi", e: 1073741824},
 		"10Mi":  {s: "10Mi", e: 10485760},
+		"na":    {s: "n/a", e: math.MaxInt64},
+		"none":  {s: "<none>", e: math.MaxInt64},
+		"ratio": {s: "1/3", e: math.MaxInt64},
 	}
 
 	for k, u := range uu {
 		t.Run(k, func(t *testing.T) {
 			assert.Equal(t, u.e, capacityToNumber(u.s))
+		})
+	}
+}
+
+func TestParallelRender(t *testing.T) {
+	uu := map[string]struct {
+		n int
+	}{
+		"empty":  {n: 0},
+		"one":    {n: 1},
+		"small":  {n: 7},
+		"medium": {n: 100},
+		"large":  {n: 10_000},
+	}
+
+	for k, u := range uu {
+		t.Run(k, func(t *testing.T) {
+			results := make([]int, u.n)
+			err := parallelRender(u.n, func(i int) error {
+				results[i] = i + 1
+				return nil
+			})
+			require.NoError(t, err)
+			for i := range u.n {
+				assert.Equal(t, i+1, results[i], "index %d", i)
+			}
+		})
+	}
+}
+
+func TestParallelRenderError(t *testing.T) {
+	err := parallelRender(50, func(i int) error {
+		if i == 25 {
+			return fmt.Errorf("boom at %d", i)
+		}
+		return nil
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "boom")
+}
+
+func BenchmarkParallelRender(b *testing.B) {
+	const n = 50_000
+	results := make([]int, n)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		_ = parallelRender(n, func(i int) error {
+			results[i] = i
+			return nil
 		})
 	}
 }

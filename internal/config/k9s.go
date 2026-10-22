@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -42,7 +43,7 @@ type K9s struct {
 	MaxConnRetry        int32      `json:"maxConnRetry" yaml:"maxConnRetry"`
 	ReadOnly            bool       `json:"readOnly" yaml:"readOnly"`
 	NoExitOnCtrlC       bool       `json:"noExitOnCtrlC" yaml:"noExitOnCtrlC"`
-	PortForwardAddress  string     `yaml:"portForwardAddress"`
+	PortForwardAddress  string     `json:"portForwardAddress" yaml:"portForwardAddress"`
 	UI                  UI         `json:"ui" yaml:"ui"`
 	SkipLatestRevCheck  bool       `json:"skipLatestRevCheck" yaml:"skipLatestRevCheck"`
 	DisablePodCounting  bool       `json:"disablePodCounting" yaml:"disablePodCounting"`
@@ -130,6 +131,8 @@ func (k *K9s) Merge(k1 *K9s) {
 	if k1 == nil {
 		return
 	}
+	k.mx.Lock()
+	defer k.mx.Unlock()
 
 	for k, v := range k1.GPUVendors {
 		KnownGPUVendors[k] = v
@@ -193,6 +196,10 @@ func (k *K9s) Reset() {
 
 // ActiveContextNamespace fetch the context active ns.
 func (k *K9s) ActiveContextNamespace() (string, error) {
+	// If no context is set, return default namespace
+	if k.ActiveContextName() == "" {
+		return client.DefaultNamespace, nil
+	}
 	act, err := k.ActiveContext()
 	if err != nil {
 		return "", err
@@ -211,7 +218,11 @@ func (k *K9s) ActiveContext() (*data.Context, error) {
 	if cfg := k.getActiveConfig(); cfg != nil && cfg.Context != nil {
 		return cfg.Context, nil
 	}
-	ct, err := k.ActivateContext(k.ActiveContextName())
+	ctxName := k.ActiveContextName()
+	if ctxName == "" {
+		return nil, errors.New("no active context available")
+	}
+	ct, err := k.ActivateContext(ctxName)
 
 	return ct, err
 }
@@ -299,7 +310,11 @@ func (k *K9s) Reload() error {
 	if k.getContextSwitch() {
 		return nil
 	}
-	ct, err := k.ks.GetContext(k.getActiveContextName())
+	ctxName := k.getActiveContextName()
+	if ctxName == "" {
+		return errors.New("no active context available")
+	}
+	ct, err := k.ks.GetContext(ctxName)
 	if err != nil {
 		return err
 	}
@@ -379,6 +394,22 @@ func (k *K9s) IsInvert() bool {
 	}
 
 	return k.UI.Invert
+}
+
+// Logo returns the configured header logo ascii art.
+func (k *K9s) Logo() string {
+	if cfg := k.getActiveConfig(); cfg != nil {
+		if art := cfg.Logo(); strings.TrimSpace(art) != "" {
+			return art
+		}
+	}
+	k.mx.RLock()
+	defer k.mx.RUnlock()
+	if strings.TrimSpace(k.UI.Logo) == "" {
+		return ""
+	}
+
+	return k.UI.Logo
 }
 
 // GetRefreshRate returns the current refresh rate.
